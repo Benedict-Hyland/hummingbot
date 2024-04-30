@@ -17,6 +17,7 @@ from hummingbot.strategy.strategy_py_base import (
     OrderFilledEvent,
     SellOrderCompletedEvent,
     SellOrderCreatedEvent,
+    OrderCancelledEvent
 )
 
 
@@ -32,8 +33,11 @@ class SimpleOrder(ScriptStrategyBase):
     exchange = os.getenv("EXCHANGE", "binance_paper_trade")
     trading_pairs = os.getenv("TRADING_PAIRS", "BTC-FDUSD")
     depth = int(os.getenv("DEPTH", 50))
-    spread_factor = Decimal(os.getenv("SPREAD_FACTOR", 2.5))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 10)
+
+    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 2))
+    stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 50))
+    time_limit = Decimal(os.getenv("TIME_LIMIT", 60*2))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
     candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=10))
@@ -48,7 +52,7 @@ class SimpleOrder(ScriptStrategyBase):
         self.candles.start()
 
     def on_tick(self):
-        self.log_with_clock(logging.INFO, f"Current Time: {datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')}")
+        # self.log_with_clock(logging.INFO, f"Current Time: {datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')}")
 
         # self.log_with_clock(logging.INFO, f'My Active Orders: {self.active_orders}')
 
@@ -85,6 +89,10 @@ class SimpleOrder(ScriptStrategyBase):
             else:
                 kdj_buying_logic = False
                 ema_buying_logic = False
+
+            # Selling Logic
+            if not limit_orders == None:
+                self.triple_barrier_check(limit_orders, market.get('mid_price'))
 
             available_asset = account_balance.loc[account_balance['Asset'] == trading_pair.split('-')[1], 'Available Balance'].iloc[0]
 
@@ -156,15 +164,15 @@ class SimpleOrder(ScriptStrategyBase):
 
         # Return DataFrame with EMA columns
         return candle_df[['EMA_3', 'EMA_7', 'EMA_25']]
-    
-    # @property
-    # def all_candles_ready(self):
-    #     """
-    #     Checks if the candlesticks are full.
-    #     :return:
-    #     """
-    #     return all([self.candles.ready])
 
+    def triple_barrier_check(self, limit_orders, mid_price):
+        """
+        Because the buy trade already has a limit order in it, then we just need to focus on checking the stop loss and time limit
+        When either of these two occur, we will cancel the order, and then once the order has successfully cancelled we will sell at market price
+        """
+        for limit_order in limit_orders:
+            if (limit_order.price < mid_price - self.stop_loss_amount) or (limit_order.age() > self.time_limit):
+                self.cancel(self.exchange, limit_order.trading_pair, limit_order.client_order_id)
 
     def did_create_buy_order(self, event: BuyOrderCreatedEvent):
         msg = (f"Created BUY order {event.order_id}")
@@ -176,6 +184,20 @@ class SimpleOrder(ScriptStrategyBase):
         self.log_with_clock(logging.INFO, msg)
         # self.notify_hb_app_with_timestamp(msg)
 
+    def did_cancel_order(self, event: OrderCancelledEvent):
+        trading_pair = event.trading_pair
+        amount = event.base_asset_amount
+
+        msg = (f"Completed Cancel sell order {event.order_id} because it reached a stop loss or time limit")
+        self.log_with_clock(logging.INFO, msg)
+
+        self.sell(
+            connector_name=self.exchange,
+            trading_pair=trading_pair,
+            amount=Decimal(amount),
+            order_type=OrderType.MARKET
+        )
+
     def did_complete_buy_order(self, event: BuyOrderCompletedEvent):
         trading_pair = f'{event.base_asset}-{event.quote_asset}'
         amount = event.base_asset_amount
@@ -184,7 +206,7 @@ class SimpleOrder(ScriptStrategyBase):
         market_conditions = self.market_conditions(self.exchange, trading_pair)
         spread = market_conditions.get('spread')
 
-        sell_price = price + (spread / self.spread_factor)
+        sell_price = price + (spread * self.take_profit_factor)
 
         msg = (f"Completed BUY order {event.order_id} to buy {event.base_asset_amount} of {event.base_asset}. Trading Pair: {trading_pair}, amount: {amount}, price: {price}, sell_price: {sell_price}")
         self.log_with_clock(logging.INFO, msg)
