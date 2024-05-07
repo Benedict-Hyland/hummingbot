@@ -46,6 +46,7 @@ class SimpleOrder(ScriptStrategyBase):
     markets = {
         exchange: set(trading_pairs)
     }
+    stop_loss_dict = {}
 
     def __init__(self, connectors: Dict[str, ConnectorBase]):
         super().__init__(connectors)
@@ -171,7 +172,10 @@ class SimpleOrder(ScriptStrategyBase):
         When either of these two occur, we will cancel the order, and then once the order has successfully cancelled we will sell at market price
         """
         for limit_order in limit_orders:
+            # self.log_with_clock(logging.INFO, f"Limit Order: {limit_order} | Price: {limit_order.price} Bool: {limit_order.price < mid_price - self.stop_loss_amount} | Age: {limit_order.age()} | Bool: {limit_order.age() > self.time_limit}")
             if (limit_order.price < mid_price - self.stop_loss_amount) or (limit_order.age() > self.time_limit):
+                self.log_with_clock(logging.INFO, f'Cancelling Order: {limit_order.client_order_id}')
+                self.stop_loss_dict[limit_order.client_order_id] = limit_order.amount
                 self.cancel(self.exchange, limit_order.trading_pair, limit_order.client_order_id)
 
     def did_create_buy_order(self, event: BuyOrderCreatedEvent):
@@ -185,10 +189,10 @@ class SimpleOrder(ScriptStrategyBase):
         # self.notify_hb_app_with_timestamp(msg)
 
     def did_cancel_order(self, event: OrderCancelledEvent):
-        trading_pair = event.trading_pair
-        amount = event.base_asset_amount
+        trading_pair = 'BTC-FDUSD'
+        amount = self.stop_loss_dict.get(event.order_id, 'Error! Event Order ID not in stop_loss_dict')
 
-        msg = (f"Completed Cancel sell order {event.order_id} because it reached a stop loss or time limit")
+        msg = (f"Completed Cancel sell order {event.order_id} because it reached a stop loss or time limit | Trading Pair: {trading_pair} | Amount: {amount}")
         self.log_with_clock(logging.INFO, msg)
 
         self.sell(
@@ -197,6 +201,7 @@ class SimpleOrder(ScriptStrategyBase):
             amount=Decimal(amount),
             order_type=OrderType.MARKET
         )
+        self.stop_loss_dict.pop(event.order_id, 'Error! Event Order ID not in stop_loss_dict')
 
     def did_complete_buy_order(self, event: BuyOrderCompletedEvent):
         trading_pair = f'{event.base_asset}-{event.quote_asset}'
