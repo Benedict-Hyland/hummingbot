@@ -175,7 +175,7 @@ class SimpleOrder(ScriptStrategyBase):
             # self.log_with_clock(logging.INFO, f"Limit Order: {limit_order} | Price: {limit_order.price} Bool: {limit_order.price < mid_price - self.stop_loss_amount} | Age: {limit_order.age()} | Bool: {limit_order.age() > self.time_limit}")
             if (limit_order.price < mid_price - self.stop_loss_amount) or (limit_order.age() > self.time_limit):
                 self.log_with_clock(logging.INFO, f'Cancelling Order: {limit_order.client_order_id}')
-                self.stop_loss_dict[limit_order.client_order_id] = limit_order.amount
+                self.stop_loss_dict[limit_order.client_order_id] = limit_order.quantity
                 self.cancel(self.exchange, limit_order.trading_pair, limit_order.client_order_id)
 
     def did_create_buy_order(self, event: BuyOrderCreatedEvent):
