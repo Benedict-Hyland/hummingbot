@@ -247,10 +247,12 @@ class SimpleOrder(ScriptStrategyBase):
 
         try:
             active_orders = self.active_orders_df()
+            sell_orders = active_orders[active_orders['Side'] == 'sell']
+            potential_trade = Decimal(sum(sell_orders['Price'] * sell_orders['Amount']))
         except:
             active_orders = None
-        sell_orders = active_orders[active_orders['Side'] == 'sell'] if active_orders else None
-        potential_trade = Decimal(sum(sell_orders['Price'] * sell_orders['Amount'])) if sell_orders != None else 0
+            potential_trade = Decimal(0)
+        
         asset_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Available Balance'].values[0])
         asset_not_traded_estimated_amount = asset_not_traded * mid_price
         potential_net_worth = total_fdusd + potential_trade + asset_not_traded_estimated_amount
@@ -261,7 +263,7 @@ class SimpleOrder(ScriptStrategyBase):
             market_conditions = self.market_conditions(self.exchange, trading_pair)
             lines.extend([f"{trading_pair} Market Conditions: {market_conditions}\n"])
 
-        if len(active_orders) != 0:
+        if active_orders != None:
             lines.extend(["", "  Maker Orders:"] + ["    " + line for line in active_orders.to_string(index=False).split("\n")])
         else:
             lines.extend(["", "  No active maker orders."])
