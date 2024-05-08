@@ -37,7 +37,7 @@ class SimpleOrder(ScriptStrategyBase):
 
     take_profit_factor = Decimal(os.getenv("TP_FACTOR", 2))
     stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 50))
-    time_limit = Decimal(os.getenv("TIME_LIMIT", 60*2))
+    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 1))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
     candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=10))
@@ -241,16 +241,19 @@ class SimpleOrder(ScriptStrategyBase):
         balance_df = self.get_balance_df()
         total_btc = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Total Balance'].values[0])
         total_fdusd = Decimal(balance_df.loc[balance_df['Asset'] == 'FDUSD', 'Total Balance'].values[0])
-        estimated_net_worth = total_btc * Decimal(self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price')) + total_fdusd
+        mid_price = Decimal(self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price'))
+        estimated_net_worth = total_btc * mid_price + total_fdusd
         lines.extend([f"Estimated Net Worth: {estimated_net_worth}\n"])
 
         try:
             active_orders = self.active_orders_df()
         except:
             active_orders = []
-        sell_orders = active_orders[active_orders['Side'] == 'sell']
+        sell_orders = active_orders[active_orders['Side'] == 'sell'] if active_orders else None
         potential_trade = Decimal(sum(sell_orders['Price'] * sell_orders['Amount']))
-        potential_net_worth = total_fdusd + potential_trade
+        asset_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Available Balance'].values[0])
+        asset_not_traded_estimated_amount = asset_not_traded * mid_price
+        potential_net_worth = total_fdusd + potential_trade + asset_not_traded_estimated_amount
         lines.extend([f"Potential Net Worth: {potential_net_worth}\n"])
 
         lines.extend(["", "  Balances:"] + ["    " + line for line in balance_df.to_string(index=False).split("\n")])
