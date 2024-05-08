@@ -36,9 +36,9 @@ class SimpleOrder(ScriptStrategyBase):
     depth = int(os.getenv("DEPTH", 50))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 10)
 
-    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 1.1))
-    stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 50))
-    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 2))
+    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 3))
+    stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 100))
+    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 3))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
     candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=10))
