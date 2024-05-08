@@ -36,9 +36,9 @@ class SimpleOrder(ScriptStrategyBase):
     depth = int(os.getenv("DEPTH", 50))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 10)
 
-    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 3))
-    stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 100))
-    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 3))
+    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 2))
+    stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 50))
+    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 2))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
     candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=10))
@@ -107,7 +107,7 @@ class SimpleOrder(ScriptStrategyBase):
                 self.buy(
                     connector_name=self.exchange,
                     trading_pair=trading_pair,
-                    amount=Decimal(amount_to_buy),
+                    amount=amount_to_buy,
                     order_type=OrderType.MARKET
                 )
     
@@ -191,7 +191,7 @@ class SimpleOrder(ScriptStrategyBase):
 
     def did_cancel_order(self, event: OrderCancelledEvent):
         trading_pair = 'BTC-FDUSD'
-        amount = self.stop_loss_dict.get(event.order_id, 'Error! Event Order ID not in stop_loss_dict')
+        amount = Decimal(self.stop_loss_dict.get(event.order_id, 'Error! Event Order ID not in stop_loss_dict'))
 
         msg = (f"Completed Cancel sell order {event.order_id} because it reached a stop loss or time limit | Trading Pair: {trading_pair} | Amount: {amount}")
         self.log_with_clock(logging.INFO, msg)
@@ -199,14 +199,14 @@ class SimpleOrder(ScriptStrategyBase):
         self.sell(
             connector_name=self.exchange,
             trading_pair=trading_pair,
-            amount=Decimal(amount),
+            amount=amount,
             order_type=OrderType.MARKET
         )
         self.stop_loss_dict.pop(event.order_id, 'Error! Event Order ID not in stop_loss_dict')
 
     def did_complete_buy_order(self, event: BuyOrderCompletedEvent):
         trading_pair = f'{event.base_asset}-{event.quote_asset}'
-        amount = event.base_asset_amount
+        amount = Decimal(event.base_asset_amount)
         price = event.quote_asset_amount / event.base_asset_amount
 
         market_conditions = self.market_conditions(self.exchange, trading_pair)
@@ -221,7 +221,7 @@ class SimpleOrder(ScriptStrategyBase):
         self.sell(
             connector_name=self.exchange,
             trading_pair=trading_pair,
-            amount=Decimal(amount),
+            amount=amount,
             order_type=OrderType.LIMIT,
             price=Decimal(sell_price)
         )
