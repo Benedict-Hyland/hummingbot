@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Dict
 import os
 from datetime import datetime
+import pandas as pd
 
 from hummingbot.client.hummingbot_application import HummingbotApplication
 from hummingbot.core.data_type.common import OrderType
@@ -35,9 +36,9 @@ class SimpleOrder(ScriptStrategyBase):
     depth = int(os.getenv("DEPTH", 50))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 10)
 
-    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 2))
+    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 1.1))
     stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 50))
-    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 1))
+    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 2))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
     candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=10))
@@ -263,7 +264,7 @@ class SimpleOrder(ScriptStrategyBase):
             market_conditions = self.market_conditions(self.exchange, trading_pair)
             lines.extend([f"{trading_pair} Market Conditions: {market_conditions}\n"])
 
-        if active_orders != None:
+        if isinstance(active_orders, pd.DataFrame):
             lines.extend(["", "  Maker Orders:"] + ["    " + line for line in active_orders.to_string(index=False).split("\n")])
         else:
             lines.extend(["", "  No active maker orders."])
