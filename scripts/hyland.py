@@ -248,9 +248,9 @@ class SimpleOrder(ScriptStrategyBase):
         try:
             active_orders = self.active_orders_df()
         except:
-            active_orders = []
+            active_orders = None
         sell_orders = active_orders[active_orders['Side'] == 'sell'] if active_orders else None
-        potential_trade = Decimal(sum(sell_orders['Price'] * sell_orders['Amount']))
+        potential_trade = Decimal(sum(sell_orders['Price'] * sell_orders['Amount'])) if sell_orders != None else 0
         asset_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Available Balance'].values[0])
         asset_not_traded_estimated_amount = asset_not_traded * mid_price
         potential_net_worth = total_fdusd + potential_trade + asset_not_traded_estimated_amount
