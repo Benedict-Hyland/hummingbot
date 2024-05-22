@@ -9,6 +9,7 @@ from hummingbot.client.hummingbot_application import HummingbotApplication
 from hummingbot.core.data_type.common import OrderType
 from hummingbot.core.rate_oracle.rate_oracle import RateOracle
 from hummingbot.core.event.events import OrderBookEvent, OrderBookTradeEvent
+from hummingbot.core.event.event_forwarder import SourceInfoEventForwarder
 from hummingbot.data_feed.candles_feed.candles_factory import CandlesConfig, CandlesFactory
 from hummingbot.connector.connector_base import ConnectorBase
 from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
@@ -52,9 +53,15 @@ class SimpleOrder(ScriptStrategyBase):
     def __init__(self, connectors: Dict[str, ConnectorBase]):
         super().__init__(connectors)
         self.candles.start()
+        self.order_book_trade_event = SourceInfoEventForwarder(self._process_public_trade)
+        self.trades_temp_storage = {trading_pair: [] for trading_pair in self.trading_pairs}
+        self.subscribed_to_order_book_trade_event = False
 
     def on_tick(self):
         # self.log_with_clock(logging.INFO, f"Current Time: {datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')}")
+        if not self.subscribed_to_order_book_trade_event:
+            self.subscribe_to_order_book_trade_event()
+        # self.log_with_clock(logging.INFO, "Successfully subscribed to order book trade event")
 
         # self.log_with_clock(logging.INFO, f'My Active Orders: {self.active_orders}')
 
@@ -88,9 +95,11 @@ class SimpleOrder(ScriptStrategyBase):
 
                 moving_averages = self.get_ema_dataframe(candle_df)
                 ema_buying_logic = moving_averages['EMA_3'].iloc[-1] > moving_averages['EMA_7'].iloc[-1] > moving_averages['EMA_25'].iloc[-1]
+                postitive_long_ema = moving_averages['EMA_200'].iloc[-1] > moving_averages['EMA_200'].iloc[-2]
             else:
                 kdj_buying_logic = False
                 ema_buying_logic = False
+                postitive_long_ema = False
 
             # Selling Logic
             if not limit_orders == None:
@@ -98,8 +107,21 @@ class SimpleOrder(ScriptStrategyBase):
 
             available_asset = account_balance.loc[account_balance['Asset'] == trading_pair.split('-')[1], 'Available Balance'].iloc[0]
 
+            market_pressure = self.determine_market_pressure_from_completed_trades(self.trades_temp_storage[trading_pair])
+
+            bid_pressure = self.determine_market_pressure(order_book=order_book)
+
             # Buying Logic
-            if self.determine_market_pressure(order_book=order_book) == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and market.get('spread') > 1 and available_asset > 100:
+            # self.log_with_clock(logging.INFO, f'''
+            #     market_pressure: {market_pressure}
+            #     bid_pressure: {bid_pressure}
+            #     kdj_buying_logic: {kdj_buying_logic}
+            #     ema_buying_logic: {ema_buying_logic}
+            #     positive_long_ema: {postitive_long_ema}
+            #     spread: {market.get("spread")}
+            #     available_asset: {available_asset}
+            # ''')
+            if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and market.get('spread') > 1 and available_asset > 100:
                 
                 buying_power = available_asset * self.buying_percentage / 100
                 amount_to_buy = Decimal(buying_power) / market.get('mid_price')
@@ -132,6 +154,7 @@ class SimpleOrder(ScriptStrategyBase):
             "asks": snapshot[1].loc[:(depth - 1), ["price", "amount"]].values.tolist(),
         }
     
+    
     def determine_market_pressure(self, order_book):
         bids = order_book['bids']
         asks = order_book['asks']
@@ -145,6 +168,18 @@ class SimpleOrder(ScriptStrategyBase):
             return 'Ask_Pressure'
         else:
             return 'Equal_Pressure'
+        
+    def determine_market_pressure_from_completed_trades(self, trades):
+        buy_volume = sum(trade['q_base'] for trade in trades if trade['side'] == 'buy')
+        sell_volume = sum(trade['q_base'] for trade in trades if trade['side'] == 'sell')
+
+        if buy_volume > sell_volume:
+            return 'Buy_Pressure'
+        elif sell_volume > buy_volume:
+            return 'Sell_Pressure'
+        else:
+            return 'Equal_Pressure'
+
         
     def get_kdj_dataframe(self, candle_df, period=9, ma_period_k=3, ma_period_d=3):
         low_min = candle_df['low'].rolling(window=period, min_periods=1).min()
@@ -163,9 +198,11 @@ class SimpleOrder(ScriptStrategyBase):
         candle_df['EMA_3'] = candle_df['close'].ewm(span=3, adjust=False).mean()
         candle_df['EMA_7'] = candle_df['close'].ewm(span=7, adjust=False).mean()
         candle_df['EMA_25'] = candle_df['close'].ewm(span=25, adjust=False).mean()
+        candle_df['EMA_200'] = candle_df['close'].ewm(span=200, adjust=False).mean()
+        # self.log_with_clock(logging.INFO, f"Candle DF: {candle_df.iloc[-1]}")
 
         # Return DataFrame with EMA columns
-        return candle_df[['EMA_3', 'EMA_7', 'EMA_25']]
+        return candle_df[['EMA_3', 'EMA_7', 'EMA_25', 'EMA_200']]
 
     def triple_barrier_check(self, limit_orders, mid_price):
         """
@@ -178,6 +215,7 @@ class SimpleOrder(ScriptStrategyBase):
                 self.log_with_clock(logging.INFO, f'Cancelling Order: {limit_order.client_order_id}')
                 self.stop_loss_dict[limit_order.client_order_id] = limit_order.quantity
                 self.cancel(self.exchange, limit_order.trading_pair, limit_order.client_order_id)
+                                  
 
     def did_create_buy_order(self, event: BuyOrderCreatedEvent):
         msg = (f"Created BUY order {event.order_id}")
@@ -231,6 +269,20 @@ class SimpleOrder(ScriptStrategyBase):
         self.log_with_clock(logging.INFO, msg)
         # self.notify_hb_app_with_timestamp(msg)
 
+    def _process_public_trade(self, event_tag: int, market: ConnectorBase, event: OrderBookTradeEvent):
+        self.trades_temp_storage[event.trading_pair].append({
+            "ts": event.timestamp,
+            "price": event.price,
+            "q_base": event.amount,
+            "side": event.type.name.lower(),
+        })
+
+    def subscribe_to_order_book_trade_event(self):
+        for market in self.connectors.values():
+            for order_book in market.order_books.values():
+                order_book.add_listener(OrderBookEvent.TradeEvent, self.order_book_trade_event)
+        self.subscribed_to_order_book_trade_event = True
+
     def format_status(self):
         if not self.ready_to_trade:
             return "Market connectors are not ready."
@@ -251,7 +303,7 @@ class SimpleOrder(ScriptStrategyBase):
             sell_orders = active_orders[active_orders['Side'] == 'sell']
             potential_trade = Decimal(sum(sell_orders['Price'] * sell_orders['Amount']))
         except:
-            active_orders = None
+            active_orders = {}
             potential_trade = Decimal(0)
         
         asset_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Available Balance'].values[0])
@@ -264,7 +316,7 @@ class SimpleOrder(ScriptStrategyBase):
             market_conditions = self.market_conditions(self.exchange, trading_pair)
             lines.extend([f"{trading_pair} Market Conditions: {market_conditions}\n"])
 
-        if isinstance(active_orders, pd.DataFrame):
+        if active_orders:
             lines.extend(["", "  Maker Orders:"] + ["    " + line for line in active_orders.to_string(index=False).split("\n")])
         else:
             lines.extend(["", "  No active maker orders."])
