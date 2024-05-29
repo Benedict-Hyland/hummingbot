@@ -56,11 +56,20 @@ class SimpleOrder(ScriptStrategyBase):
         self.order_book_trade_event = SourceInfoEventForwarder(self._process_public_trade)
         self.trades_temp_storage = {trading_pair: [] for trading_pair in self.trading_pairs}
         self.subscribed_to_order_book_trade_event = False
+        
+        # Info creation
+        self.all_buys_count = 0
+        self.all_sells_count = 0
+        self.losing_sell_count = 0
+        self.trade_volume = 0
+        self.initial_btc_price = None
+        self.start_time = datetime.now()
 
     def on_tick(self):
         # self.log_with_clock(logging.INFO, f"Current Time: {datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')}")
         if not self.subscribed_to_order_book_trade_event:
             self.subscribe_to_order_book_trade_event()
+
         # self.log_with_clock(logging.INFO, "Successfully subscribed to order book trade event")
 
         # self.log_with_clock(logging.INFO, f'My Active Orders: {self.active_orders}')
@@ -78,6 +87,9 @@ class SimpleOrder(ScriptStrategyBase):
             # Return the best_ask, best_bid, and mid_price, and spread
             market = self.market_conditions(self.exchange, trading_pair)
             # self.log_with_clock(logging.INFO, f'{trading_pair} Market Conditions:\n{market_conditions}')
+
+            if not self.initial_btc_price:
+                self.initial_btc_price = market.get('mid_price')
 
             # Find Out The Recent Completed Orders to determine if the price will move up or down
 
@@ -241,6 +253,7 @@ class SimpleOrder(ScriptStrategyBase):
             order_type=OrderType.MARKET
         )
         self.stop_loss_dict.pop(event.order_id, 'Error! Event Order ID not in stop_loss_dict')
+        self.losing_sell_count += 1
 
     def did_complete_buy_order(self, event: BuyOrderCompletedEvent):
         trading_pair = f'{event.base_asset}-{event.quote_asset}'
@@ -263,10 +276,14 @@ class SimpleOrder(ScriptStrategyBase):
             order_type=OrderType.LIMIT,
             price=Decimal(sell_price)
         )
+        self.all_buys_count += 1
+        self.trade_volume += amount * price
 
     def did_complete_sell_order(self, event: SellOrderCompletedEvent):
         msg = (f"Completed SELL order {event.order_id} to sell {event.base_asset_amount} of {event.base_asset}")
         self.log_with_clock(logging.INFO, msg)
+        self.all_sells_count += 1
+        self.trade_volume += event.base_asset * event.quote_asset
         # self.notify_hb_app_with_timestamp(msg)
 
     def _process_public_trade(self, event_tag: int, market: ConnectorBase, event: OrderBookTradeEvent):
@@ -283,6 +300,12 @@ class SimpleOrder(ScriptStrategyBase):
                 order_book.add_listener(OrderBookEvent.TradeEvent, self.order_book_trade_event)
         self.subscribed_to_order_book_trade_event = True
 
+    def time_elapsed(self, timedelta):
+        days = timedelta.days
+        hours, remainder = divmod(timedelta.seconds, 60*60)
+        minutes, seconds = divmod(remainder, 60)
+        return days, hours, minutes, seconds
+
     def format_status(self):
         if not self.ready_to_trade:
             return "Market connectors are not ready."
@@ -290,7 +313,15 @@ class SimpleOrder(ScriptStrategyBase):
         warning_lines = []
         warning_lines.extend(self.network_warning(self.get_market_trading_pair_tuples()))
 
-        lines.extend([f"Latest data at {datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')} \n"])
+        binance_time = datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')
+        latest_time = datetime.now()
+
+        time_difference = latest_time - self.start_time
+
+        days, hours, minutes, seconds = self.time_elapsed(time_difference)
+
+        lines.extend([f"Latest data at {binance_time} \n"])
+        lines.extend([f"Been Trading for {days} Days {hours} Hours {minutes} Minutes {seconds} Seconds"])
         balance_df = self.get_balance_df()
         total_btc = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Total Balance'].values[0])
         total_fdusd = Decimal(balance_df.loc[balance_df['Asset'] == 'FDUSD', 'Total Balance'].values[0])
@@ -298,12 +329,19 @@ class SimpleOrder(ScriptStrategyBase):
         estimated_net_worth = total_btc * mid_price + total_fdusd
         lines.extend([f"Estimated Net Worth: {estimated_net_worth}\n"])
 
+        lines.extend([f"Buy Events Completed: {self.all_buys_count:,}"])
+        lines.extend([f"Sell Events Completed: {self.all_sells_count:,}"])
+        lines.extend([f"Of which {self.losing_sell_count:,} were non winners"])
+        lines.extend([f"Total Trading Volume: ${self.trade_volume:,.2f}"])
+        hold_strategy_percentage = mid_price / self.initial_btc_price
+        lines.extend([f"Hold Strategy Profit: ${hold_strategy_percentage * 2,500:,.2f}"])
+
         try:
             active_orders = self.active_orders_df()
             sell_orders = active_orders[active_orders['Side'] == 'sell']
             potential_trade = Decimal(sum(sell_orders['Price'] * sell_orders['Amount']))
         except:
-            active_orders = {}
+            active_orders = pd.DataFrame()
             potential_trade = Decimal(0)
         
         asset_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Available Balance'].values[0])
@@ -316,7 +354,7 @@ class SimpleOrder(ScriptStrategyBase):
             market_conditions = self.market_conditions(self.exchange, trading_pair)
             lines.extend([f"{trading_pair} Market Conditions: {market_conditions}\n"])
 
-        if active_orders:
+        if not active_orders.empty:
             lines.extend(["", "  Maker Orders:"] + ["    " + line for line in active_orders.to_string(index=False).split("\n")])
         else:
             lines.extend(["", "  No active maker orders."])
