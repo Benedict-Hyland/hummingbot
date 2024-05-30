@@ -70,6 +70,11 @@ class SimpleOrder(ScriptStrategyBase):
         if not self.subscribed_to_order_book_trade_event:
             self.subscribe_to_order_book_trade_event()
 
+        estimated_net_worth = self.estimate_net_worth()
+        self.log_with_clock(logging.INFO, f"Estimated Net Worth: {estimated_net_worth}")
+        if estimated_net_worth < 2300:
+            self.stop()
+
         # self.log_with_clock(logging.INFO, "Successfully subscribed to order book trade event")
 
         # self.log_with_clock(logging.INFO, f'My Active Orders: {self.active_orders}')
@@ -107,11 +112,15 @@ class SimpleOrder(ScriptStrategyBase):
 
                 moving_averages = self.get_ema_dataframe(candle_df)
                 ema_buying_logic = moving_averages['EMA_3'].iloc[-1] > moving_averages['EMA_7'].iloc[-1] > moving_averages['EMA_25'].iloc[-1]
-                postitive_long_ema = moving_averages['EMA_200'].iloc[-1] > moving_averages['EMA_200'].iloc[-2]
+
+                if len(moving_averages) > 1:
+                    postitive_long_ema = moving_averages['EMA_35'].iloc[-1] > moving_averages['EMA_35'].iloc[-2]
+                else:
+                    postitive_long_ema = False
+
             else:
                 kdj_buying_logic = False
                 ema_buying_logic = False
-                postitive_long_ema = False
 
             # Selling Logic
             if not limit_orders == None:
@@ -210,11 +219,11 @@ class SimpleOrder(ScriptStrategyBase):
         candle_df['EMA_3'] = candle_df['close'].ewm(span=3, adjust=False).mean()
         candle_df['EMA_7'] = candle_df['close'].ewm(span=7, adjust=False).mean()
         candle_df['EMA_25'] = candle_df['close'].ewm(span=25, adjust=False).mean()
-        candle_df['EMA_200'] = candle_df['close'].ewm(span=200, adjust=False).mean()
+        candle_df['EMA_35'] = candle_df['close'].ewm(span=35, adjust=False).mean()
         # self.log_with_clock(logging.INFO, f"Candle DF: {candle_df.iloc[-1]}")
 
         # Return DataFrame with EMA columns
-        return candle_df[['EMA_3', 'EMA_7', 'EMA_25', 'EMA_200']]
+        return candle_df[['EMA_3', 'EMA_7', 'EMA_25', 'EMA_35']]
 
     def triple_barrier_check(self, limit_orders, mid_price):
         """
@@ -227,7 +236,15 @@ class SimpleOrder(ScriptStrategyBase):
                 self.log_with_clock(logging.INFO, f'Cancelling Order: {limit_order.client_order_id}')
                 self.stop_loss_dict[limit_order.client_order_id] = limit_order.quantity
                 self.cancel(self.exchange, limit_order.trading_pair, limit_order.client_order_id)
-                                  
+
+    def estimate_net_worth(self):
+        balance_df = self.get_balance_df()
+        mid_price = Decimal(self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price'))
+        total_btc = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Total Balance'].values[0])
+        total_fdusd = Decimal(balance_df.loc[balance_df['Asset'] == 'FDUSD', 'Total Balance'].values[0])
+        estimated_net_worth = Decimal((total_btc * mid_price) + total_fdusd)
+        return estimated_net_worth
+
 
     def did_create_buy_order(self, event: BuyOrderCreatedEvent):
         msg = (f"Created BUY order {event.order_id}")
@@ -283,7 +300,7 @@ class SimpleOrder(ScriptStrategyBase):
         msg = (f"Completed SELL order {event.order_id} to sell {event.base_asset_amount} of {event.base_asset}")
         self.log_with_clock(logging.INFO, msg)
         self.all_sells_count += 1
-        self.trade_volume += event.base_asset * event.quote_asset
+        self.trade_volume += event.base_asset_amount * event.quote_asset_amount
         # self.notify_hb_app_with_timestamp(msg)
 
     def _process_public_trade(self, event_tag: int, market: ConnectorBase, event: OrderBookTradeEvent):
@@ -334,7 +351,7 @@ class SimpleOrder(ScriptStrategyBase):
         lines.extend([f"Of which {self.losing_sell_count:,} were non winners"])
         lines.extend([f"Total Trading Volume: ${self.trade_volume:,.2f}"])
         hold_strategy_percentage = mid_price / self.initial_btc_price
-        lines.extend([f"Hold Strategy Profit: ${hold_strategy_percentage * 2,500:,.2f}"])
+        lines.extend([f"Hold Strategy Profit: ${hold_strategy_percentage * 2500:,.2f}"])
 
         try:
             active_orders = self.active_orders_df()
