@@ -7,7 +7,6 @@ import pandas as pd
 
 from hummingbot.client.hummingbot_application import HummingbotApplication
 from hummingbot.core.data_type.common import OrderType
-from hummingbot.core.rate_oracle.rate_oracle import RateOracle
 from hummingbot.core.event.events import OrderBookEvent, OrderBookTradeEvent
 from hummingbot.core.event.event_forwarder import SourceInfoEventForwarder
 from hummingbot.data_feed.candles_feed.candles_factory import CandlesConfig, CandlesFactory
@@ -71,9 +70,12 @@ class SimpleOrder(ScriptStrategyBase):
             self.subscribe_to_order_book_trade_event()
 
         estimated_net_worth = self.estimate_net_worth()
-        self.log_with_clock(logging.INFO, f"Estimated Net Worth: {estimated_net_worth}")
-        if estimated_net_worth < 2300:
-            self.stop()
+        # self.log_with_clock(logging.INFO, f"Estimated Net Worth: {estimated_net_worth}")
+        if estimated_net_worth < 900:
+            msg = f"Estimated Net Worth: {estimated_net_worth} too low, stopping the account to avoid any more losses"
+            self.log_with_clock(logging.INFO, msg)
+            self.notify_hb_app_with_timestamp(msg)
+            HummingbotApplication.main_application().stop()
 
         # self.log_with_clock(logging.INFO, "Successfully subscribed to order book trade event")
 
