@@ -35,10 +35,11 @@ class SimpleOrder(ScriptStrategyBase):
     trading_pairs = os.getenv("TRADING_PAIRS", "BTC-FDUSD")
     depth = int(os.getenv("DEPTH", 50))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 10)
+    spread_buy = os.getenv("SPREAD_BUY", 0.1)
 
     take_profit_factor = Decimal(os.getenv("TP_FACTOR", 5))
-    stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 50))
-    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 2))
+    stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 75))
+    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 1))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
     candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=10))
@@ -144,7 +145,7 @@ class SimpleOrder(ScriptStrategyBase):
             #     spread: {market.get("spread")}
             #     available_asset: {available_asset}
             # ''')
-            if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and market.get('spread') > 5 and available_asset > 100:
+            if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and market.get('spread') > self.spread_buy and available_asset > 100:
                 
                 buying_power = available_asset * self.buying_percentage / 100
                 amount_to_buy = Decimal(buying_power) / market.get('mid_price')
