@@ -35,11 +35,11 @@ class SimpleOrder(ScriptStrategyBase):
     trading_pairs = os.getenv("TRADING_PAIRS", "BTC-FDUSD")
     depth = int(os.getenv("DEPTH", 50))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 10)
-    spread_buy = os.getenv("SPREAD_BUY", 0.1)
+    spread_buy = os.getenv("SPREAD_BUY", 1)
 
-    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 5))
-    stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 75))
-    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 1))
+    take_profit_percent = Decimal(os.getenv("TP_PERCENT", 0.25))
+    stop_loss_percent = Decimal(os.getenv("SL_PERCENT", 0.25))
+    time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 5))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
     candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=10))
@@ -234,8 +234,8 @@ class SimpleOrder(ScriptStrategyBase):
         When either of these two occur, we will cancel the order, and then once the order has successfully cancelled we will sell at market price
         """
         for limit_order in limit_orders:
-            # self.log_with_clock(logging.INFO, f"Limit Order: {limit_order} | Price: {limit_order.price} Bool: {limit_order.price < mid_price - self.stop_loss_amount} | Age: {limit_order.age()} | Bool: {limit_order.age() > self.time_limit}")
-            if (limit_order.price < mid_price - self.stop_loss_amount) or (limit_order.age() > self.time_limit):
+            # self.log_with_clock(logging.INFO, f"Limit Order: {limit_order} | Price: {limit_order.price} Bool: {limit_order.price < mid_price - self.stop_loss_percent} | Age: {limit_order.age()} | Bool: {limit_order.age() > self.time_limit}")
+            if (limit_order.price < mid_price * (1 - self.stop_loss_percent)) or (limit_order.age() > self.time_limit):
                 self.log_with_clock(logging.INFO, f'Cancelling Order: {limit_order.client_order_id}')
                 self.stop_loss_dict[limit_order.client_order_id] = limit_order.quantity
                 self.cancel(self.exchange, limit_order.trading_pair, limit_order.client_order_id)
@@ -278,14 +278,14 @@ class SimpleOrder(ScriptStrategyBase):
     def did_complete_buy_order(self, event: BuyOrderCompletedEvent):
         trading_pair = f'{event.base_asset}-{event.quote_asset}'
         amount = Decimal(event.base_asset_amount)
-        price = event.quote_asset_amount / event.base_asset_amount
+        bought_price = event.quote_asset_amount / event.base_asset_amount
 
         market_conditions = self.market_conditions(self.exchange, trading_pair)
         spread = market_conditions.get('spread')
 
-        sell_price = price + (spread * self.take_profit_factor)
+        sell_price = bought_price * (1 + self.take_profit_percent)
 
-        msg = (f"Completed BUY order {event.order_id} to buy {event.base_asset_amount} of {event.base_asset}. Trading Pair: {trading_pair}, amount: {amount}, price: {price}, sell_price: {sell_price}")
+        msg = (f"Completed BUY order {event.order_id} to buy {event.base_asset_amount} of {event.base_asset}. Trading Pair: {trading_pair}, amount: {amount}, price: {bought_price}, sell_price: {sell_price}")
         self.log_with_clock(logging.INFO, msg)
         # self.notify_hb_app_with_timestamp(msg)
 
@@ -297,7 +297,7 @@ class SimpleOrder(ScriptStrategyBase):
             price=Decimal(sell_price)
         )
         self.all_buys_count += 1
-        self.trade_volume += amount * price
+        self.trade_volume += amount * bought_price
 
     def did_complete_sell_order(self, event: SellOrderCompletedEvent):
         msg = (f"Completed SELL order {event.order_id} to sell {event.base_asset_amount} of {event.base_asset}")
