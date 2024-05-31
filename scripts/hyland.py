@@ -42,7 +42,7 @@ class SimpleOrder(ScriptStrategyBase):
     time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 5))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
-    candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=10))
+    candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=100))
 
     # Other Parameters
     markets = {
