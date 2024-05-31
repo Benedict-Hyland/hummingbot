@@ -36,7 +36,7 @@ class SimpleOrder(ScriptStrategyBase):
     depth = int(os.getenv("DEPTH", 50))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 10)
 
-    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 2))
+    take_profit_factor = Decimal(os.getenv("TP_FACTOR", 5))
     stop_loss_amount = Decimal(os.getenv("SL_FACTOR", 50))
     time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 2))
 
@@ -71,7 +71,7 @@ class SimpleOrder(ScriptStrategyBase):
 
         estimated_net_worth = self.estimate_net_worth()
         # self.log_with_clock(logging.INFO, f"Estimated Net Worth: {estimated_net_worth}")
-        if estimated_net_worth < 900:
+        if estimated_net_worth < 2200:
             msg = f"Estimated Net Worth: {estimated_net_worth} too low, stopping the account to avoid any more losses"
             self.log_with_clock(logging.INFO, msg)
             self.notify_hb_app_with_timestamp(msg)
@@ -144,7 +144,7 @@ class SimpleOrder(ScriptStrategyBase):
             #     spread: {market.get("spread")}
             #     available_asset: {available_asset}
             # ''')
-            if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and market.get('spread') > 1 and available_asset > 100:
+            if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and market.get('spread') > 5 and available_asset > 100:
                 
                 buying_power = available_asset * self.buying_percentage / 100
                 amount_to_buy = Decimal(buying_power) / market.get('mid_price')
