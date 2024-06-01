@@ -253,22 +253,22 @@ class SimpleOrder(ScriptStrategyBase):
 
     def estimate_net_worth(self):
         balance_df = self.get_balance_df()
-        estimated_net_worth = Decimal(0)
+        total_quote = Decimal(balance_df.loc[balance_df['Asset'] == quote, 'Total Balance'].values[0])
+        estimated_net_worth = Decimal(total_quote)
         for trading_pair in self.trading_pairs:
             base = trading_pair.split('-')[0]
             quote = trading_pair.split('-')[1]
             mid_price = Decimal(self.market_conditions(self.exchange, trading_pair).get('mid_price'))
             total_base = Decimal(balance_df.loc[balance_df['Asset'] == base, 'Total Balance'].values[0])
-            total_quote = Decimal(balance_df.loc[balance_df['Asset'] == quote, 'Total Balance'].values[0])
-            estimated_net_worth += Decimal((total_base * mid_price) + total_quote)
-            msg = f'''
-            {trading_pair}
-            Mid Price: {mid_price}
-            Total Base: {total_base}
-            Total Quote: {total_quote}
-            Estimated Net Worth: {estimated_net_worth}
-            '''
-            self.log_with_clock(logging.INFO, msg)
+            estimated_net_worth += Decimal(total_base * mid_price)
+            # msg = f'''
+            # {trading_pair}
+            # Mid Price: {mid_price}
+            # Total Base: {total_base}
+            # Total Quote: {total_quote}
+            # Estimated Net Worth: {estimated_net_worth}
+            # '''
+            # self.log_with_clock(logging.INFO, msg)
         
         return estimated_net_worth
 
@@ -397,7 +397,7 @@ class SimpleOrder(ScriptStrategyBase):
                 quote_price = Decimal(self.market_conditions(self.exchange, f'{quote}-FDUSD').get('mid_price'))
                 quote_val = quote_price * quote_not_traded
             else:
-                quote_val = quote_not_traded
+                quote_val = 0
 
             
             trading_pair_value = base_price * base_not_traded + quote_val
