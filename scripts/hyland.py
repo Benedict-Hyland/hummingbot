@@ -297,7 +297,7 @@ class SimpleOrder(ScriptStrategyBase):
         bought_price = event.quote_asset_amount / event.base_asset_amount
 
         market_conditions = self.market_conditions(self.exchange, trading_pair)
-        spread = market_conditions.get('spread')
+        # spread = market_conditions.get('spread')
 
         sell_price = bought_price * (1 + self.take_profit_percent / 100)
 
@@ -381,7 +381,11 @@ class SimpleOrder(ScriptStrategyBase):
             base = trading_pair.split('-')[0]
             quote = trading_pair.split('-')[1]
             base_price = Decimal(self.market_conditions(self.exchange, f'{base}-FDUSD').get('mid_price'))
-            quote_price = Decimal(self.market_conditions(self.exchange, f'{quote}-FDUSD').get('mid_price'))
+            if not quote == 'FDUSD':
+                quote_price = Decimal(self.market_conditions(self.exchange, f'{quote}-FDUSD').get('mid_price'))
+            else:
+                quote_price = self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price')
+                
             base_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == base, 'Available Balance'].values[0])
             quote_not_traded = Decimal(balance_df.loc[balance_df['Quote'] == quote, 'Available Balance'].values[0])
             trading_pair_value = base_price * base_not_traded + quote_price * quote_not_traded
