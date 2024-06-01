@@ -39,6 +39,7 @@ class SimpleOrder(ScriptStrategyBase):
     spread_buy = os.getenv("SPREAD_BUY", 0.1)
     max_orders = os.getenv("MAX_LIMIT_ORDERS", 4)
 
+    limit_undercut = os.getenv('LIMIT_UNDERCUT', 0.1)
     take_profit_percent = Decimal(os.getenv("TP_PERCENT", 0.00751))
     stop_loss_percent = Decimal(os.getenv("SL_PERCENT", 0.03))
     time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 5))
@@ -160,7 +161,7 @@ class SimpleOrder(ScriptStrategyBase):
                 
                 buying_power = available_asset * self.buying_percentage / 100
                 amount_to_buy = Decimal(buying_power) / market.get('mid_price')
-                sell_price = market.get('best_bid') + 0.1
+                sell_price = market.get('best_bid') + Decimal(self.limit_undercut)
                 
                 self.buy(
                     connector_name=self.exchange,
