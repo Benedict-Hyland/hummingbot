@@ -40,8 +40,8 @@ class SimpleOrder(ScriptStrategyBase):
     max_orders = os.getenv("MAX_LIMIT_ORDERS", 4)
 
     limit_undercut = os.getenv('LIMIT_UNDERCUT', 0.1)
-    take_profit_percent = Decimal(os.getenv("TP_PERCENT", 0.00751))
-    stop_loss_percent = Decimal(os.getenv("SL_PERCENT", 0.03))
+    take_profit_percent = Decimal(os.getenv("TP_PERCENT", 0.0755))
+    stop_loss_percent = Decimal(os.getenv("SL_PERCENT", 0.09))
     time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 5))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
@@ -167,8 +167,7 @@ class SimpleOrder(ScriptStrategyBase):
                     connector_name=self.exchange,
                     trading_pair=trading_pair,
                     amount=amount_to_buy,
-                    order_type=OrderType.LIMIT,
-                    price=sell_price
+                    order_type=OrderType.MARKET,
                 )
     
     def market_conditions(self, exchange: str, trading_pair: str):
