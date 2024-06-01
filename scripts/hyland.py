@@ -39,8 +39,8 @@ class SimpleOrder(ScriptStrategyBase):
     spread_buy = os.getenv("SPREAD_BUY", 0.1)
     max_orders = os.getenv("MAX_LIMIT_ORDERS", 4)
 
-    take_profit_percent = Decimal(os.getenv("TP_PERCENT", 0.0751))
-    stop_loss_percent = Decimal(os.getenv("SL_PERCENT", 0.0751))
+    take_profit_percent = Decimal(os.getenv("TP_PERCENT", 0.00751))
+    stop_loss_percent = Decimal(os.getenv("SL_PERCENT", 0.03))
     time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 5))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
@@ -248,7 +248,7 @@ class SimpleOrder(ScriptStrategyBase):
             # self.log_with_clock(logging.INFO, f"Limit Order: {limit_order} | Price: {limit_order.price} Bool: {limit_order.price < mid_price - self.stop_loss_percent} | Age: {limit_order.age()} | Bool: {limit_order.age() > self.time_limit}")
             if (limit_order.price < mid_price * (1 - self.stop_loss_percent / 100)) or (limit_order.age() > self.time_limit):
                 self.log_with_clock(logging.INFO, f'Cancelling Order: {limit_order.client_order_id}')
-                self.stop_loss_dict[limit_order.client_order_id] = limit_order.quantity
+                self.stop_loss_dict[limit_order.client_order_id] = [limit_order.quantity, limit_order.trading_pair]
                 self.cancel(self.exchange, limit_order.trading_pair, limit_order.client_order_id)
 
     def estimate_net_worth(self):
@@ -283,10 +283,11 @@ class SimpleOrder(ScriptStrategyBase):
         # self.notify_hb_app_with_timestamp(msg)
 
     def did_cancel_order(self, event: OrderCancelledEvent):
-        trading_pair = self.pair
-        amount = Decimal(self.stop_loss_dict.get(event.order_id, 'Error! Event Order ID not in stop_loss_dict'))
+        self.losing_sell_count += 1
+        amount = Decimal(self.stop_loss_dict.get(event.order_id, 'Error! Event Order ID not in stop_loss_dict')[0])
+        trading_pair = self.stop_loss_dict.get(event.order_id)[1]
 
-        msg = (f"Completed Cancel sell order {event.order_id} because it reached a stop loss or time limit | Trading Pair: {trading_pair} | Amount: {amount}")
+        msg = (f"Completed Cancel sell order {event.order_id} because it reached a stop loss or time limit | Amount: {amount}")
         self.log_with_clock(logging.INFO, msg)
 
         self.sell(
@@ -295,16 +296,13 @@ class SimpleOrder(ScriptStrategyBase):
             amount=amount,
             order_type=OrderType.MARKET
         )
-        self.losing_sell_count += 1
+        
         self.stop_loss_dict.pop(event.order_id, 'Error! Event Order ID not in stop_loss_dict')
 
     def did_complete_buy_order(self, event: BuyOrderCompletedEvent):
         trading_pair = f'{event.base_asset}-{event.quote_asset}'
         amount = Decimal(event.base_asset_amount)
         bought_price = event.quote_asset_amount / event.base_asset_amount
-
-        market_conditions = self.market_conditions(self.exchange, trading_pair)
-        # spread = market_conditions.get('spread')
 
         sell_price = bought_price * (1 + self.take_profit_percent / 100)
 
