@@ -33,7 +33,7 @@ class SimpleOrder(ScriptStrategyBase):
 
     # Key Parameters
     exchange = os.getenv("EXCHANGE", "binance_paper_trade")
-    trading_pairs = os.getenv("TRADING_PAIRS", 'BTC-FDUSD,ETH-FDUSD')
+    trading_pairs = os.getenv("TRADING_PAIRS", 'BTC-FDUSD,ETH-FDUSD,SOL-FDUSD')
     depth = int(os.getenv("DEPTH", 50))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 30)
     spread_buy = os.getenv("SPREAD_BUY", 0.1)
@@ -160,12 +160,14 @@ class SimpleOrder(ScriptStrategyBase):
                 
                 buying_power = available_asset * self.buying_percentage / 100
                 amount_to_buy = Decimal(buying_power) / market.get('mid_price')
+                sell_price = market.get('best_bid') + 0.1
                 
                 self.buy(
                     connector_name=self.exchange,
                     trading_pair=trading_pair,
                     amount=amount_to_buy,
-                    order_type=OrderType.MARKET
+                    order_type=OrderType.LIMIT,
+                    price=sell_price
                 )
     
     def market_conditions(self, exchange: str, trading_pair: str):
