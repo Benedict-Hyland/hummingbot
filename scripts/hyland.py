@@ -1,24 +1,25 @@
 import logging
-from decimal import Decimal
-from typing import Dict
 import os
 from datetime import datetime
+from decimal import Decimal
+from typing import Dict
+
 import pandas as pd
 
 from hummingbot.client.hummingbot_application import HummingbotApplication
-from hummingbot.core.data_type.common import OrderType
-from hummingbot.core.event.events import OrderBookEvent, OrderBookTradeEvent
-from hummingbot.core.event.event_forwarder import SourceInfoEventForwarder
-from hummingbot.data_feed.candles_feed.candles_factory import CandlesConfig, CandlesFactory
 from hummingbot.connector.connector_base import ConnectorBase
+from hummingbot.core.data_type.common import OrderType
+from hummingbot.core.event.event_forwarder import SourceInfoEventForwarder
+from hummingbot.core.event.events import OrderBookEvent, OrderBookTradeEvent
+from hummingbot.data_feed.candles_feed.candles_factory import CandlesConfig, CandlesFactory
 from hummingbot.strategy.script_strategy_base import ScriptStrategyBase
 from hummingbot.strategy.strategy_py_base import (
     BuyOrderCompletedEvent,
     BuyOrderCreatedEvent,
+    OrderCancelledEvent,
     OrderFilledEvent,
     SellOrderCompletedEvent,
     SellOrderCreatedEvent,
-    OrderCancelledEvent
 )
 
 
@@ -30,19 +31,23 @@ class SimpleOrder(ScriptStrategyBase):
     The script uses event handlers to notify the user when the order is created and completed, and then stops the bot.
     """
 
+    base = "BTC"
+    quote = "FDUSD"
+    pair = f"{base}-{quote}"
     # Key Parameters
     exchange = os.getenv("EXCHANGE", "binance_paper_trade")
-    trading_pairs = os.getenv("TRADING_PAIRS", "BTC-FDUSD")
+    trading_pairs = os.getenv("TRADING_PAIRS", pair)
     depth = int(os.getenv("DEPTH", 50))
-    buying_percentage = os.getenv("BUYINGPERCENTAGE", 10)
-    spread_buy = os.getenv("SPREAD_BUY", 1)
+    buying_percentage = os.getenv("BUYINGPERCENTAGE", 30)
+    spread_buy = os.getenv("SPREAD_BUY", 0.1)
+    max_orders = os.getenv("MAX_LIMIT_ORDERS", 4)
 
-    take_profit_percent = Decimal(os.getenv("TP_PERCENT", 0.25))
-    stop_loss_percent = Decimal(os.getenv("SL_PERCENT", 0.25))
+    take_profit_percent = Decimal(os.getenv("TP_PERCENT", 0.0751))
+    stop_loss_percent = Decimal(os.getenv("SL_PERCENT", 0.0751))
     time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 5))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
-    candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair='BTC-FDUSD', interval="1s", max_records=100))
+    candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair=pair, interval="1s", max_records=100))
 
     # Other Parameters
     markets = {
@@ -62,7 +67,7 @@ class SimpleOrder(ScriptStrategyBase):
         self.all_sells_count = 0
         self.losing_sell_count = 0
         self.trade_volume = 0
-        self.initial_btc_price = None
+        self.initial_base_price = None
         self.start_time = datetime.now()
 
     def on_tick(self):
@@ -96,8 +101,8 @@ class SimpleOrder(ScriptStrategyBase):
             market = self.market_conditions(self.exchange, trading_pair)
             # self.log_with_clock(logging.INFO, f'{trading_pair} Market Conditions:\n{market_conditions}')
 
-            if not self.initial_btc_price:
-                self.initial_btc_price = market.get('mid_price')
+            if not self.initial_base_price:
+                self.initial_base_price = market.get('mid_price')
 
             # Find Out The Recent Completed Orders to determine if the price will move up or down
 
@@ -128,6 +133,9 @@ class SimpleOrder(ScriptStrategyBase):
             # Selling Logic
             if not limit_orders == None:
                 self.triple_barrier_check(limit_orders, market.get('mid_price'))
+                ongoing_limit_orders = len(limit_orders)
+            else:
+                ongoing_limit_orders = 0
 
             available_asset = account_balance.loc[account_balance['Asset'] == trading_pair.split('-')[1], 'Available Balance'].iloc[0]
 
@@ -136,16 +144,18 @@ class SimpleOrder(ScriptStrategyBase):
             bid_pressure = self.determine_market_pressure(order_book=order_book)
 
             # Buying Logic
-            # self.log_with_clock(logging.INFO, f'''
-            #     market_pressure: {market_pressure}
-            #     bid_pressure: {bid_pressure}
-            #     kdj_buying_logic: {kdj_buying_logic}
-            #     ema_buying_logic: {ema_buying_logic}
-            #     positive_long_ema: {postitive_long_ema}
-            #     spread: {market.get("spread")}
-            #     available_asset: {available_asset}
-            # ''')
-            if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and market.get('spread') > self.spread_buy and available_asset > 100:
+            self.log_with_clock(logging.INFO, f'''
+                market_pressure: {market_pressure}
+                bid_pressure: {bid_pressure}
+                kdj_buying_logic: {kdj_buying_logic}
+                ema_buying_logic: {ema_buying_logic}
+                positive_long_ema: {postitive_long_ema}
+                ongoing_limit_orders: {ongoing_limit_orders}
+                spread: ${market.get("spread"):,.2f}
+                market_price: ${market.get("mid_price"):,.2f}
+                available_asset: ${available_asset:,.2f}
+            ''')
+            if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and market.get('spread') > self.spread_buy and ongoing_limit_orders <= self.max_orders and available_asset > 100:
                 
                 buying_power = available_asset * self.buying_percentage / 100
                 amount_to_buy = Decimal(buying_power) / market.get('mid_price')
@@ -235,17 +245,17 @@ class SimpleOrder(ScriptStrategyBase):
         """
         for limit_order in limit_orders:
             # self.log_with_clock(logging.INFO, f"Limit Order: {limit_order} | Price: {limit_order.price} Bool: {limit_order.price < mid_price - self.stop_loss_percent} | Age: {limit_order.age()} | Bool: {limit_order.age() > self.time_limit}")
-            if (limit_order.price < mid_price * (1 - self.stop_loss_percent)) or (limit_order.age() > self.time_limit):
+            if (limit_order.price < mid_price * (1 - self.stop_loss_percent / 100)) or (limit_order.age() > self.time_limit):
                 self.log_with_clock(logging.INFO, f'Cancelling Order: {limit_order.client_order_id}')
                 self.stop_loss_dict[limit_order.client_order_id] = limit_order.quantity
                 self.cancel(self.exchange, limit_order.trading_pair, limit_order.client_order_id)
 
     def estimate_net_worth(self):
         balance_df = self.get_balance_df()
-        mid_price = Decimal(self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price'))
-        total_btc = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Total Balance'].values[0])
-        total_fdusd = Decimal(balance_df.loc[balance_df['Asset'] == 'FDUSD', 'Total Balance'].values[0])
-        estimated_net_worth = Decimal((total_btc * mid_price) + total_fdusd)
+        mid_price = Decimal(self.market_conditions(self.exchange, self.pair).get('mid_price'))
+        total_base = Decimal(balance_df.loc[balance_df['Asset'] == self.base, 'Total Balance'].values[0])
+        total_quote = Decimal(balance_df.loc[balance_df['Asset'] == self.quote, 'Total Balance'].values[0])
+        estimated_net_worth = Decimal((total_base * mid_price) + total_quote)
         return estimated_net_worth
 
 
@@ -260,7 +270,7 @@ class SimpleOrder(ScriptStrategyBase):
         # self.notify_hb_app_with_timestamp(msg)
 
     def did_cancel_order(self, event: OrderCancelledEvent):
-        trading_pair = 'BTC-FDUSD'
+        trading_pair = self.pair
         amount = Decimal(self.stop_loss_dict.get(event.order_id, 'Error! Event Order ID not in stop_loss_dict'))
 
         msg = (f"Completed Cancel sell order {event.order_id} because it reached a stop loss or time limit | Trading Pair: {trading_pair} | Amount: {amount}")
@@ -272,8 +282,8 @@ class SimpleOrder(ScriptStrategyBase):
             amount=amount,
             order_type=OrderType.MARKET
         )
-        self.stop_loss_dict.pop(event.order_id, 'Error! Event Order ID not in stop_loss_dict')
         self.losing_sell_count += 1
+        self.stop_loss_dict.pop(event.order_id, 'Error! Event Order ID not in stop_loss_dict')
 
     def did_complete_buy_order(self, event: BuyOrderCompletedEvent):
         trading_pair = f'{event.base_asset}-{event.quote_asset}'
@@ -283,7 +293,7 @@ class SimpleOrder(ScriptStrategyBase):
         market_conditions = self.market_conditions(self.exchange, trading_pair)
         spread = market_conditions.get('spread')
 
-        sell_price = bought_price * (1 + self.take_profit_percent)
+        sell_price = bought_price * (1 + self.take_profit_percent / 100)
 
         msg = (f"Completed BUY order {event.order_id} to buy {event.base_asset_amount} of {event.base_asset}. Trading Pair: {trading_pair}, amount: {amount}, price: {bought_price}, sell_price: {sell_price}")
         self.log_with_clock(logging.INFO, msg)
@@ -300,9 +310,9 @@ class SimpleOrder(ScriptStrategyBase):
         self.trade_volume += amount * bought_price
 
     def did_complete_sell_order(self, event: SellOrderCompletedEvent):
+        self.all_sells_count += 1
         msg = (f"Completed SELL order {event.order_id} to sell {event.base_asset_amount} of {event.base_asset}")
         self.log_with_clock(logging.INFO, msg)
-        self.all_sells_count += 1
         self.trade_volume += event.base_asset_amount * event.quote_asset_amount
         # self.notify_hb_app_with_timestamp(msg)
 
@@ -341,19 +351,20 @@ class SimpleOrder(ScriptStrategyBase):
         days, hours, minutes, seconds = self.time_elapsed(time_difference)
 
         lines.extend([f"Latest data at {binance_time} \n"])
+        lines.extend([f"Trading: {self.pair}"])
         lines.extend([f"Been Trading for {days} Days {hours} Hours {minutes} Minutes {seconds} Seconds"])
         balance_df = self.get_balance_df()
-        total_btc = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Total Balance'].values[0])
-        total_fdusd = Decimal(balance_df.loc[balance_df['Asset'] == 'FDUSD', 'Total Balance'].values[0])
-        mid_price = Decimal(self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price'))
-        estimated_net_worth = total_btc * mid_price + total_fdusd
+        total_base = Decimal(balance_df.loc[balance_df['Asset'] == self.base, 'Total Balance'].values[0])
+        total_quote = Decimal(balance_df.loc[balance_df['Asset'] == self.quote, 'Total Balance'].values[0])
+        mid_price = Decimal(self.market_conditions(self.exchange, self.pair).get('mid_price'))
+        estimated_net_worth = (total_base * mid_price) + total_quote
         lines.extend([f"Estimated Net Worth: {estimated_net_worth}\n"])
 
         lines.extend([f"Buy Events Completed: {self.all_buys_count:,}"])
         lines.extend([f"Sell Events Completed: {self.all_sells_count:,}"])
         lines.extend([f"Of which {self.losing_sell_count:,} were non winners"])
         lines.extend([f"Total Trading Volume: ${self.trade_volume:,.2f}"])
-        hold_strategy_percentage = mid_price / self.initial_btc_price
+        hold_strategy_percentage = mid_price / self.initial_base_price
         lines.extend([f"Hold Strategy Profit: ${hold_strategy_percentage * 2500:,.2f}"])
 
         try:
@@ -364,9 +375,9 @@ class SimpleOrder(ScriptStrategyBase):
             active_orders = pd.DataFrame()
             potential_trade = Decimal(0)
         
-        asset_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == 'BTC', 'Available Balance'].values[0])
+        asset_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == self.base, 'Available Balance'].values[0])
         asset_not_traded_estimated_amount = asset_not_traded * mid_price
-        potential_net_worth = total_fdusd + potential_trade + asset_not_traded_estimated_amount
+        potential_net_worth = total_quote + potential_trade + asset_not_traded_estimated_amount
         lines.extend([f"Potential Net Worth: {potential_net_worth}\n"])
 
         lines.extend(["", "  Balances:"] + ["    " + line for line in balance_df.to_string(index=False).split("\n")])
