@@ -44,7 +44,7 @@ class SimpleOrder(ScriptStrategyBase):
     time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 5))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
-    candles = {pair: CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair=pair, interval="1s", max_records=100)) for pair in trading_pairs}
+    candles = {pair: CandlesFactory.get_candle(CandlesConfig(connector='binance', trading_pair=pair, interval="1s", max_records=100)) for pair in trading_pairs}
 
     # Other Parameters
     markets = {
