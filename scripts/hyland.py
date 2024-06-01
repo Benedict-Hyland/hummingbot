@@ -69,7 +69,7 @@ class SimpleOrder(ScriptStrategyBase):
         self.start_time = datetime.now()
 
     def on_tick(self):
-        # self.log_with_clock(logging.INFO, f"Current Time: {datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')}")
+        self.log_with_clock(logging.INFO, f"Current Time: {datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')}")
         if not self.subscribed_to_order_book_trade_event:
             self.subscribe_to_order_book_trade_event()
 
