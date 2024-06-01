@@ -33,7 +33,7 @@ class SimpleOrder(ScriptStrategyBase):
 
     # Key Parameters
     exchange = os.getenv("EXCHANGE", "binance_paper_trade")
-    trading_pairs = os.getenv("TRADING_PAIRS", 'BTC-FDUSD')
+    trading_pairs = os.getenv("TRADING_PAIRS", 'BTC-FDUSD,ETH-FDUSD')
     depth = int(os.getenv("DEPTH", 50))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 30)
     spread_buy = os.getenv("SPREAD_BUY", 0.1)
