@@ -67,7 +67,7 @@ class SimpleOrder(ScriptStrategyBase):
         self.all_sells_count = 0
         self.losing_sell_count = 0
         self.trade_volume = 0
-        self.initial_base_price = None
+        self.initial_basic_price = None
         self.start_time = datetime.now()
 
     def on_tick(self):
@@ -87,6 +87,9 @@ class SimpleOrder(ScriptStrategyBase):
 
         # self.log_with_clock(logging.INFO, f'My Active Orders: {self.active_orders}')
 
+        if not self.initial_basic_price:
+            self.initial_basic_price = self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price')
+
         # Find Out My Account Balance
         account_balance = self.get_balance_df()
         # self.log_with_clock(logging.INFO, f'My Account Balance:\n{account_balance}')
@@ -101,8 +104,6 @@ class SimpleOrder(ScriptStrategyBase):
             market = self.market_conditions(self.exchange, trading_pair)
             # self.log_with_clock(logging.INFO, f'{trading_pair} Market Conditions:\n{market_conditions}')
 
-            if not self.initial_base_price:
-                self.initial_base_price = market.get('mid_price')
 
             # Find Out The Recent Completed Orders to determine if the price will move up or down
 
@@ -252,10 +253,15 @@ class SimpleOrder(ScriptStrategyBase):
 
     def estimate_net_worth(self):
         balance_df = self.get_balance_df()
-        mid_price = Decimal(self.market_conditions(self.exchange, self.pair).get('mid_price'))
-        total_base = Decimal(balance_df.loc[balance_df['Asset'] == self.base, 'Total Balance'].values[0])
-        total_quote = Decimal(balance_df.loc[balance_df['Asset'] == self.quote, 'Total Balance'].values[0])
-        estimated_net_worth = Decimal((total_base * mid_price) + total_quote)
+        estimated_net_worth = Decimal(0)
+        for trading_pair in self.trading_pairs():
+            base = trading_pair.split('-')[0]
+            quote = trading_pair.split('-')[1]
+            mid_price = Decimal(self.market_conditions(self.exchange, trading_pair).get('mid_price'))
+            total_base = Decimal(balance_df.loc[balance_df['Asset'] == base, 'Total Balance'].values[0])
+            total_quote = Decimal(balance_df.loc[balance_df['Asset'] == quote, 'Total Balance'].values[0])
+            estimated_net_worth += Decimal((total_base * mid_price) + total_quote)
+        
         return estimated_net_worth
 
 
@@ -353,19 +359,12 @@ class SimpleOrder(ScriptStrategyBase):
         lines.extend([f"Latest data at {binance_time} \n"])
         lines.extend([f"Trading: {self.pair}"])
         lines.extend([f"Been Trading for {days} Days {hours} Hours {minutes} Minutes {seconds} Seconds"])
-        balance_df = self.get_balance_df()
-        total_base = Decimal(balance_df.loc[balance_df['Asset'] == self.base, 'Total Balance'].values[0])
-        total_quote = Decimal(balance_df.loc[balance_df['Asset'] == self.quote, 'Total Balance'].values[0])
-        mid_price = Decimal(self.market_conditions(self.exchange, self.pair).get('mid_price'))
-        estimated_net_worth = (total_base * mid_price) + total_quote
+        estimated_net_worth = self.estimate_net_worth()
         lines.extend([f"Estimated Net Worth: {estimated_net_worth}\n"])
-
         lines.extend([f"Buy Events Completed: {self.all_buys_count:,}"])
         lines.extend([f"Sell Events Completed: {self.all_sells_count:,}"])
         lines.extend([f"Of which {self.losing_sell_count:,} were non winners"])
         lines.extend([f"Total Trading Volume: ${self.trade_volume:,.2f}"])
-        hold_strategy_percentage = mid_price / self.initial_base_price
-        lines.extend([f"Hold Strategy Profit: ${hold_strategy_percentage * 2500:,.2f}"])
 
         try:
             active_orders = self.active_orders_df()
@@ -375,10 +374,25 @@ class SimpleOrder(ScriptStrategyBase):
             active_orders = pd.DataFrame()
             potential_trade = Decimal(0)
         
-        asset_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == self.base, 'Available Balance'].values[0])
-        asset_not_traded_estimated_amount = asset_not_traded * mid_price
-        potential_net_worth = total_quote + potential_trade + asset_not_traded_estimated_amount
+        balance_df = self.get_balance_df()
+
+        potential_net_worth = Decimal(potential_trade)
+
+        for trading_pair in self.trading_pairs:
+            base = trading_pair.split('-')[0]
+            quote = trading_pair.split('-')[1]
+            base_price = Decimal(self.market_conditions(self.exchange, f'{base}-TUSD').get('mid_price'))
+            quote_price = Decimal(self.market_conditions(self.exchange, f'{quote}-TUSD').get('mid_price'))
+            base_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == base, 'Available Balance'].values[0])
+            quote_not_traded = Decimal(balance_df.loc[balance_df['Quote'] == quote, 'Available Balance'].values[0])
+            trading_pair_value = base_price * base_not_traded + quote_price * quote_not_traded
+            potential_net_worth += Decimal(trading_pair_value)
+
         lines.extend([f"Potential Net Worth: {potential_net_worth}\n"])
+
+        basic_mid_price = Decimal(self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price'))
+        hold_strategy_percentage = basic_mid_price / self.initial_basic_price
+        lines.extend([f"Hold Strategy of BTC-FDUSD Profit: ${hold_strategy_percentage * 2500:,.2f}"])
 
         lines.extend(["", "  Balances:"] + ["    " + line for line in balance_df.to_string(index=False).split("\n")])
         for trading_pair in self.trading_pairs:
