@@ -381,14 +381,18 @@ class SimpleOrder(ScriptStrategyBase):
             base = trading_pair.split('-')[0]
             quote = trading_pair.split('-')[1]
             base_price = Decimal(self.market_conditions(self.exchange, f'{base}-FDUSD').get('mid_price'))
-            if not quote == 'FDUSD':
-                quote_price = Decimal(self.market_conditions(self.exchange, f'{quote}-FDUSD').get('mid_price'))
-            else:
-                quote_price = self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price')
 
             base_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == base, 'Available Balance'].values[0])
             quote_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == quote, 'Available Balance'].values[0])
-            trading_pair_value = base_price * base_not_traded + quote_price * quote_not_traded
+
+            if not quote == 'FDUSD':
+                quote_price = Decimal(self.market_conditions(self.exchange, f'{quote}-FDUSD').get('mid_price'))
+                quote_val = quote_price * quote_not_traded
+            else:
+                quote_val = quote_not_traded
+
+            
+            trading_pair_value = base_price * base_not_traded + quote_val
             potential_net_worth += Decimal(trading_pair_value)
 
         lines.extend([f"Potential Net Worth: {potential_net_worth}\n"])
