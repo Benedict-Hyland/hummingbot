@@ -253,11 +253,10 @@ class SimpleOrder(ScriptStrategyBase):
 
     def estimate_net_worth(self):
         balance_df = self.get_balance_df()
-        total_quote = Decimal(balance_df.loc[balance_df['Asset'] == quote, 'Total Balance'].values[0])
+        total_quote = Decimal(balance_df.loc[balance_df['Asset'] == 'FDUSD', 'Total Balance'].values[0])
         estimated_net_worth = Decimal(total_quote)
         for trading_pair in self.trading_pairs:
             base = trading_pair.split('-')[0]
-            quote = trading_pair.split('-')[1]
             mid_price = Decimal(self.market_conditions(self.exchange, trading_pair).get('mid_price'))
             total_base = Decimal(balance_df.loc[balance_df['Asset'] == base, 'Total Balance'].values[0])
             estimated_net_worth += Decimal(total_base * mid_price)
