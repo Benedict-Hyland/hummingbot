@@ -69,7 +69,7 @@ class SimpleOrder(ScriptStrategyBase):
         self.start_time = datetime.now()
 
     def on_tick(self):
-        self.log_with_clock(logging.INFO, f"Current Time: {datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')}")
+        # self.log_with_clock(logging.INFO, f"Current Time: {datetime.utcfromtimestamp(self.current_timestamp).strftime('%d/%m/%Y %H:%M:%S')}")
         if not self.subscribed_to_order_book_trade_event:
             self.subscribe_to_order_book_trade_event()
 
@@ -156,7 +156,7 @@ class SimpleOrder(ScriptStrategyBase):
             #     market_price: ${market.get("mid_price"):,.2f}
             #     available_asset: ${available_asset:,.2f}
             # ''')
-            if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and market.get('spread') > self.spread_buy and ongoing_limit_orders <= self.max_orders and available_asset > 100:
+            if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and ongoing_limit_orders <= self.max_orders and available_asset > 100:
                 
                 buying_power = available_asset * self.buying_percentage / 100
                 amount_to_buy = Decimal(buying_power) / market.get('mid_price')
