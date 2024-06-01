@@ -145,6 +145,7 @@ class SimpleOrder(ScriptStrategyBase):
 
             # Buying Logic
             self.log_with_clock(logging.INFO, f'''
+                {trading_pair}
                 market_pressure: {market_pressure}
                 bid_pressure: {bid_pressure}
                 kdj_buying_logic: {kdj_buying_logic}
