@@ -31,12 +31,9 @@ class SimpleOrder(ScriptStrategyBase):
     The script uses event handlers to notify the user when the order is created and completed, and then stops the bot.
     """
 
-    base = "BTC"
-    quote = "FDUSD"
-    pair = f"{base}-{quote}"
     # Key Parameters
     exchange = os.getenv("EXCHANGE", "binance_paper_trade")
-    trading_pairs = os.getenv("TRADING_PAIRS", pair)
+    trading_pairs = os.getenv("TRADING_PAIRS", 'BTC-FDUSD')
     depth = int(os.getenv("DEPTH", 50))
     buying_percentage = os.getenv("BUYINGPERCENTAGE", 30)
     spread_buy = os.getenv("SPREAD_BUY", 0.1)
@@ -47,7 +44,7 @@ class SimpleOrder(ScriptStrategyBase):
     time_limit = Decimal(os.getenv("TIME_LIMIT", 60 * 5))
 
     trading_pairs = [pair for pair in trading_pairs.split(",")]
-    candles = CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair=pair, interval="1s", max_records=100))
+    candles = {pair: CandlesFactory.get_candle(CandlesConfig(connector=exchange.split('_')[0], trading_pair=pair, interval="1s", max_records=100)) for pair in trading_pairs}
 
     # Other Parameters
     markets = {
@@ -57,7 +54,8 @@ class SimpleOrder(ScriptStrategyBase):
 
     def __init__(self, connectors: Dict[str, ConnectorBase]):
         super().__init__(connectors)
-        self.candles.start()
+        for candle in self.candles.values():
+            candle.start()
         self.order_book_trade_event = SourceInfoEventForwarder(self._process_public_trade)
         self.trades_temp_storage = {trading_pair: [] for trading_pair in self.trading_pairs}
         self.subscribed_to_order_book_trade_event = False
@@ -77,7 +75,7 @@ class SimpleOrder(ScriptStrategyBase):
 
         estimated_net_worth = self.estimate_net_worth()
         # self.log_with_clock(logging.INFO, f"Estimated Net Worth: {estimated_net_worth}")
-        if estimated_net_worth < 2200:
+        if estimated_net_worth < 2400:
             msg = f"Estimated Net Worth: {estimated_net_worth} too low, stopping the account to avoid any more losses"
             self.log_with_clock(logging.INFO, msg)
             self.notify_hb_app_with_timestamp(msg)
@@ -112,7 +110,8 @@ class SimpleOrder(ScriptStrategyBase):
             # self.log_with_clock(logging.INFO, f'{trading_pair} Order Book:\n{order_book}')
 
             # Get the candles for buying logic
-            candle_df = self.candles.candles_df
+            candle = self.candles[trading_pair]
+            candle_df = candle.candles_df
 
             if not candle_df.empty:
                 kdj_df = self.get_kdj_dataframe(candle_df=candle_df, period=9, ma_period_k=3, ma_period_d=3)
@@ -254,7 +253,7 @@ class SimpleOrder(ScriptStrategyBase):
     def estimate_net_worth(self):
         balance_df = self.get_balance_df()
         estimated_net_worth = Decimal(0)
-        for trading_pair in self.trading_pairs():
+        for trading_pair in self.trading_pairs:
             base = trading_pair.split('-')[0]
             quote = trading_pair.split('-')[1]
             mid_price = Decimal(self.market_conditions(self.exchange, trading_pair).get('mid_price'))
@@ -381,8 +380,8 @@ class SimpleOrder(ScriptStrategyBase):
         for trading_pair in self.trading_pairs:
             base = trading_pair.split('-')[0]
             quote = trading_pair.split('-')[1]
-            base_price = Decimal(self.market_conditions(self.exchange, f'{base}-TUSD').get('mid_price'))
-            quote_price = Decimal(self.market_conditions(self.exchange, f'{quote}-TUSD').get('mid_price'))
+            base_price = Decimal(self.market_conditions(self.exchange, f'{base}-FDUSD').get('mid_price'))
+            quote_price = Decimal(self.market_conditions(self.exchange, f'{quote}-FDUSD').get('mid_price'))
             base_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == base, 'Available Balance'].values[0])
             quote_not_traded = Decimal(balance_df.loc[balance_df['Quote'] == quote, 'Available Balance'].values[0])
             trading_pair_value = base_price * base_not_traded + quote_price * quote_not_traded
