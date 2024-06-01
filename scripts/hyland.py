@@ -373,34 +373,11 @@ class SimpleOrder(ScriptStrategyBase):
         try:
             active_orders = self.active_orders_df()
             sell_orders = active_orders[active_orders['Side'] == 'sell']
-            potential_trade = Decimal(sum(sell_orders['Price'] * sell_orders['Amount']))
         except:
             active_orders = pd.DataFrame()
             potential_trade = Decimal(0)
         
         balance_df = self.get_balance_df()
-
-        potential_net_worth = Decimal(potential_trade)
-
-        for trading_pair in self.trading_pairs:
-            base = trading_pair.split('-')[0]
-            quote = trading_pair.split('-')[1]
-            base_price = Decimal(self.market_conditions(self.exchange, f'{base}-FDUSD').get('mid_price'))
-
-            base_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == base, 'Available Balance'].values[0])
-            quote_not_traded = Decimal(balance_df.loc[balance_df['Asset'] == quote, 'Available Balance'].values[0])
-
-            if not quote == 'FDUSD':
-                quote_price = Decimal(self.market_conditions(self.exchange, f'{quote}-FDUSD').get('mid_price'))
-                quote_val = quote_price * quote_not_traded
-            else:
-                quote_val = 0
-
-            
-            trading_pair_value = base_price * base_not_traded + quote_val
-            potential_net_worth += Decimal(trading_pair_value)
-
-        lines.extend([f"Potential Net Worth: {potential_net_worth}\n"])
 
         basic_mid_price = Decimal(self.market_conditions(self.exchange, 'BTC-FDUSD').get('mid_price'))
         hold_strategy_percentage = basic_mid_price / self.initial_basic_price
