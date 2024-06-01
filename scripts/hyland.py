@@ -357,7 +357,6 @@ class SimpleOrder(ScriptStrategyBase):
         days, hours, minutes, seconds = self.time_elapsed(time_difference)
 
         lines.extend([f"Latest data at {binance_time} \n"])
-        lines.extend([f"Trading: {self.pair}"])
         lines.extend([f"Been Trading for {days} Days {hours} Hours {minutes} Minutes {seconds} Seconds"])
         estimated_net_worth = self.estimate_net_worth()
         lines.extend([f"Estimated Net Worth: {estimated_net_worth}\n"])
