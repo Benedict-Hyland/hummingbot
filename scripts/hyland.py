@@ -144,18 +144,18 @@ class SimpleOrder(ScriptStrategyBase):
             bid_pressure = self.determine_market_pressure(order_book=order_book)
 
             # Buying Logic
-            self.log_with_clock(logging.INFO, f'''
-                {trading_pair}
-                market_pressure: {market_pressure}
-                bid_pressure: {bid_pressure}
-                kdj_buying_logic: {kdj_buying_logic}
-                ema_buying_logic: {ema_buying_logic}
-                positive_long_ema: {postitive_long_ema}
-                ongoing_limit_orders: {ongoing_limit_orders}
-                spread: ${market.get("spread"):,.2f}
-                market_price: ${market.get("mid_price"):,.2f}
-                available_asset: ${available_asset:,.2f}
-            ''')
+            # self.log_with_clock(logging.INFO, f'''
+            #     {trading_pair}
+            #     market_pressure: {market_pressure}
+            #     bid_pressure: {bid_pressure}
+            #     kdj_buying_logic: {kdj_buying_logic}
+            #     ema_buying_logic: {ema_buying_logic}
+            #     positive_long_ema: {postitive_long_ema}
+            #     ongoing_limit_orders: {ongoing_limit_orders}
+            #     spread: ${market.get("spread"):,.2f}
+            #     market_price: ${market.get("mid_price"):,.2f}
+            #     available_asset: ${available_asset:,.2f}
+            # ''')
             if market_pressure == 'Buy_Pressure' and bid_pressure == 'Bid_Pressure' and kdj_buying_logic and ema_buying_logic and postitive_long_ema and market.get('spread') > self.spread_buy and ongoing_limit_orders <= self.max_orders and available_asset > 100:
                 
                 buying_power = available_asset * self.buying_percentage / 100
@@ -261,6 +261,14 @@ class SimpleOrder(ScriptStrategyBase):
             total_base = Decimal(balance_df.loc[balance_df['Asset'] == base, 'Total Balance'].values[0])
             total_quote = Decimal(balance_df.loc[balance_df['Asset'] == quote, 'Total Balance'].values[0])
             estimated_net_worth += Decimal((total_base * mid_price) + total_quote)
+            msg = f'''
+            {trading_pair}
+            Mid Price: {mid_price}
+            Total Base: {total_base}
+            Total Quote: {total_quote}
+            Estimated Net Worth: {estimated_net_worth}
+            '''
+            self.log_with_clock(logging.INFO, msg)
         
         return estimated_net_worth
 
